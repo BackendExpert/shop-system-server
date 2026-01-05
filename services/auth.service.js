@@ -16,6 +16,9 @@ const {
 // genrate otp util
 const genarateOTP = require("../utils/others/genarateOTP")
 
+// genarate token
+const generateToken = require("../utils/token/generateToken")
+
 // verify Token
 const verifyToken = require("../utils/token/verifyToken")
 
@@ -29,8 +32,7 @@ const logUserAction = require("../utils/others/logUserAction")
 const CreateAccountEmail = require("../templates/CreateAccountEmail")
 const notificationEmail = require("../templates/notificationEmail")
 
-// genarate token
-const generateToken = require("../utils/token/generateToken")
+
 
 class AuthService {
     static async createAuth(email, req) {
@@ -51,12 +53,7 @@ class AuthService {
             otp: hashotp
         })
 
-        const otptoken = generateToken(
-            {
-                email: user.email,
-            },
-            '5min'
-        )
+        const otptoken = generateToken({ email }, '5min')
 
         if (!user) {
             const role = await Role.findOne({ name: "user" });
@@ -102,7 +99,7 @@ class AuthService {
         return CreateLoginResDTO(otptoken)
     }
 
-    static async verifyOTP(email, otp, req) {
+    static async verifyOTP(token, otp, req) {
         const decoded = verifyToken(token);
         const email = decoded.email;
 
@@ -165,7 +162,7 @@ class AuthService {
 
         const getuserrole = await Role.findById(user.role);
 
-        const token = tokenCreator(
+        const authtoken = generateToken(
             {
                 id: user._id,
                 email: user.email,
@@ -200,7 +197,7 @@ class AuthService {
 
         await UserOTP.deleteOne({ email });
 
-        return VerifyLoginResDTO(token);
+        return VerifyLoginResDTO(authtoken);
 
     }
 }
