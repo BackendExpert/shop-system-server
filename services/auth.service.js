@@ -14,7 +14,7 @@ const {
 } = require("../dtos/auth.dto")
 
 // genrate otp util
-const genarateOTP = require("../utils/others/genarateOTP")
+const { genarateOTP } = require("../utils/others/genarateOTP")
 
 // genarate token
 const generateToken = require("../utils/token/generateToken")
@@ -23,7 +23,7 @@ const generateToken = require("../utils/token/generateToken")
 const verifyToken = require("../utils/token/verifyToken")
 
 // login apptempt reset 
-const resetloginattempts = require("../utils/logins/resetLoginAttempt")
+const { shouldResetAttempts } = require("../utils/logins/resetLoginAttempt")
 
 // use actions
 const logUserAction = require("../utils/others/logUserAction")
@@ -43,7 +43,7 @@ class AuthService {
             throw new Error("OPT Already Sent, Check your email")
         }
 
-        const otp = genarateOTP(8)
+        const otp = genarateOTP()
         const hashotp = await bcrypt.hash(otp, 10)
 
         await CreateAccountEmail(email, otp)
@@ -108,7 +108,7 @@ class AuthService {
             throw new Error("User not found");
         }
 
-        if (resetloginattempts(user)) {
+        if (shouldResetAttempts(user)) {
             user.login_attempt = 0;
             user.lastLoginAttemptAt = null;
             await user.save();

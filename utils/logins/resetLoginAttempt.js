@@ -5,3 +5,5 @@ function shouldResetAttempts(user) {
 
     return (Date.now() - user.lastLoginAttemptAt.getTime()) > RESET_TIME;
 }
+
+module.exports = { shouldResetAttempts };

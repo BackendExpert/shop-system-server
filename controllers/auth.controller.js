@@ -35,7 +35,8 @@ const AuthController = {
 
             const result = await AuthService.verifyOTP(
                 dto.token,
-                dto.otp
+                dto.otp,
+                req
             )
             
             res.status(200).json(result)

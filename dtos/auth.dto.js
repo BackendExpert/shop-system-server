@@ -8,14 +8,14 @@ exports.VerifyOTPDTO = (token, otp) => ({
 });
 // -------------------------------------------------------------
 
-exports.CreateAccountResDTO = (message = "Account created successfully, and OTP send to your Email") => ({
+exports.CreateAccountResDTO = (token, message = "Account created successfully, and OTP send to your Email") => ({
     success: true,
     token,
     message,
     timestamp: Date.now()
 });
 
-exports.CreateLoginResDTO = (message = "OTP sent to your email") => ({
+exports.CreateLoginResDTO = (token, message = "OTP sent to your email") => ({
     success: true,
     token,
     message,
