@@ -1,4 +1,5 @@
 const bcrypt = require("bcrypt")
+const MAX_ATTEMPTS = 5;
 
 // models
 const User = require("../models/user.model")
@@ -14,6 +15,12 @@ const {
 
 // genrate otp util
 const genarateOTP = require("../utils/others/genarateOTP")
+
+// verify Token
+const verifyToken = require("../utils/token/verifyToken")
+
+// login apptempt reset 
+const resetloginattempts = require("../utils/logins/resetLoginAttempt")
 
 // use actions
 const logUserAction = require("../utils/others/logUserAction")
@@ -76,7 +83,7 @@ class AuthService {
                 );
             }
 
-            return CreateAccountResDTO(token)
+            return CreateAccountResDTO(otptoken)
         }
         if (req) {
             await logUserAction(
@@ -92,17 +99,35 @@ class AuthService {
             );
         }
 
-        return CreateLoginResDTO(token)
+        return CreateLoginResDTO(otptoken)
     }
 
     static async verifyOTP(email, otp, req) {
+        const decoded = verifyToken(token);
+        const email = decoded.email;
+
         const user = await User.findOne({ email });
         if (!user) {
             throw new Error("User not found");
         }
 
+        if (resetloginattempts(user)) {
+            user.login_attempt = 0;
+            user.lastLoginAttemptAt = null;
+            await user.save();
+        }
+
+        if (user.login_attempt >= MAX_ATTEMPTS) {
+            throw new Error("Account temporarily locked. Try again after 15 minutes");
+        }
+
+
+
         const checkotp = await UserOTP.findOne({ email });
         if (!checkotp || !checkotp.otp) {
+            user.login_attempt += 1;
+            user.lastLoginAttemptAt = new Date();
+            await user.save();
             await logUserAction(
                 req,
                 "LOGIN_ATTEMPT_FAILED",
@@ -120,6 +145,9 @@ class AuthService {
 
         const isOtpValid = await bcrypt.compare(otp, checkotp.otp);
         if (!isOtpValid) {
+            user.login_attempt += 1;
+            user.lastLoginAttemptAt = new Date();
+            await user.save();
             await logUserAction(
                 req,
                 "LOGIN_ATTEMPT_FAILED",
@@ -160,6 +188,9 @@ class AuthService {
             metadata,
             user._id
         );
+
+        user.login_attempt = 0;
+        user.lastLoginAttemptAt = null;
 
         user.lastLogin = new Date();
         await user.save();
