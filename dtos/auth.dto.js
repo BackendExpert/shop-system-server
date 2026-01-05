@@ -2,8 +2,8 @@ exports.CreateAuthDTO = (email) => ({
     email: String(email).toLowerCase().trim()
 });
 
-exports.VerifyOTPDTO = (email, otp) => ({
-    email: String(email).toLowerCase().trim(),
+exports.VerifyOTPDTO = (token, otp) => ({
+    token: token,
     otp: String(otp).trim()
 });
 

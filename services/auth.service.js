@@ -8,7 +8,8 @@ const UserOTP = require("../models/userotp.model")
 // dtos
 const {
     CreateAccountResDTO,
-    CreateLoginResDTO
+    CreateLoginResDTO,
+    VerifyLoginResDTO
 } = require("../dtos/auth.dto")
 
 // genrate otp util
@@ -19,12 +20,13 @@ const logUserAction = require("../utils/others/logUserAction")
 
 // templates
 const CreateAccountEmail = require("../templates/CreateAccountEmail")
+const notificationEmail = require("../templates/notificationEmail")
 
 // genarate token
 const generateToken = require("../utils/token/generateToken")
 
 class AuthService {
-    static async creatAuth(email) {
+    static async createAuth(email, req) {
         const user = await User.findOne({ email: email })
         const userotp = await UserOTP.findOne({ email: email })
 
@@ -91,7 +93,83 @@ class AuthService {
         }
 
         return CreateLoginResDTO(token)
+    }
 
+    static async verifyOTP(email, otp, req) {
+        const user = await User.findOne({ email });
+        if (!user) {
+            throw new Error("User not found");
+        }
+
+        const checkotp = await UserOTP.findOne({ email });
+        if (!checkotp || !checkotp.otp) {
+            await logUserAction(
+                req,
+                "LOGIN_ATTEMPT_FAILED",
+                `${email} Login Attempt Failed, OTP not found or expired`,
+                {
+                    ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+                    userAgent: req.headers["user-agent"],
+                    timestamp: new Date()
+                },
+                user._id
+            );
+
+            throw new Error("OTP expired or invalid. Please request a new one.");
+        }
+
+        const isOtpValid = await bcrypt.compare(otp, checkotp.otp);
+        if (!isOtpValid) {
+            await logUserAction(
+                req,
+                "LOGIN_ATTEMPT_FAILED",
+                `${email} Login Attempt Failed, Wrong OTP`,
+                {
+                    ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+                    userAgent: req.headers["user-agent"],
+                    timestamp: new Date()
+                },
+                user._id
+            );
+
+            throw new Error("Invalid OTP");
+        }
+
+        const getuserrole = await Role.findById(user.role);
+
+        const token = tokenCreator(
+            {
+                id: user._id,
+                email: user.email,
+                username: user.username,
+                role: getuserrole?.name,
+            },
+            "1d"
+        );
+
+        const metadata = {
+            ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
+            userAgent: req.headers["user-agent"],
+            timestamp: new Date().toLocaleString()
+        };
+
+        await logUserAction(
+            req,
+            "LOGIN_ATTEMPT_SUCCESS",
+            `${email} Login Attempt Success`,
+            metadata,
+            user._id
+        );
+
+        user.lastLogin = new Date();
+        await user.save();
+
+        const notification = "Login Success at " + user.lastLogin
+        await notificationEmail(email, notification)
+
+        await UserOTP.deleteOne({ email });
+
+        return VerifyLoginResDTO(token);
 
     }
 }
