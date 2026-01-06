@@ -14,7 +14,7 @@ exports.CreateProductDTO = (data) => ({
     expiryDate: data.expiryDate,
     isDiscounted: data.isDiscounted,
     discountPercentage: data.discountPercentage,
-    createdBy: data.userId
+    images: data.images,
 });
 
 
@@ -32,7 +32,8 @@ exports.UpdateProductDTO = (data) => ({
     expiryDate: data.expiryDate,
     isDiscounted: data.isDiscounted,
     discountPercentage: data.discountPercentage,
-    isActive: data.isActive
+    isActive: data.isActive,
+    images: data.images,
 });
 
 // create product res dto 

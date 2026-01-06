@@ -87,7 +87,12 @@ const ProductSchema = new mongoose.Schema(
         createdBy: {
             type: mongoose.Schema.Types.ObjectId,
             ref: "User"
-        }
+        },
+        images: [
+            {
+                type: String,
+            }
+        ],
     },
     {
         timestamps: true
