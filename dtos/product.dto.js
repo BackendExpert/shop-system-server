@@ -35,24 +35,26 @@ exports.UpdateProductDTO = (data) => ({
     isActive: data.isActive
 });
 
+// create product res dto 
+exports.CreateProductResDTO = (message="Product Created Successfully") => ({ success: true, message })
 
-// RESPONSE DTO (SAFE FOR FRONTEND)
-exports.ProductResDTO = (product) => ({
-    id: product._id,
-    name: product.name,
-    barcode: product.barcode,
-    sku: product.sku,
-    category: product.category,
-    brand: product.brand,
-    costPrice: product.costPrice,
-    sellingPrice: product.sellingPrice,
-    taxPercentage: product.taxPercentage,
-    quantity: product.quantity,
-    minStockAlert: product.minStockAlert,
-    batchNo: product.batchNo,
-    expiryDate: product.expiryDate,
-    isActive: product.isActive,
-    isDiscounted: product.isDiscounted,
-    discountPercentage: product.discountPercentage,
-    createdAt: product.createdAt
+// update product res dto
+exports.UpdateProductResDTO = (message="Product Updated Successfully") => ({ success: true, message })
+
+
+// get all products res dto
+exports.AllProductsResDTO = (message="All Products Fetched Successfully") => ({success: true, result, message })
+
+// get one product res dto
+exports.OneProductResDTO = (message="One Products Fetched Successfully") => ({success: true, result, message })
+
+// error res dto
+
+exports.ErrorResDTO = (message = "Something went wrong", code = "SERVER_ERROR") => ({
+    success: false,
+    error: {
+        code,
+        message
+    },
+    timestamp: Date.now()
 });
