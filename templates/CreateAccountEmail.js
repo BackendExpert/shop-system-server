@@ -37,7 +37,7 @@ async function sendOTPEmail(email, otp) {
                                     color: #0f172a;
                                     letter-spacing: -0.3px;
                                 ">
-                                    Travel Management System
+                                    ${process.env.PROJECT_NAME}
                                 </h1>
 
                                 <p style="
@@ -69,7 +69,7 @@ async function sendOTPEmail(email, otp) {
                                     margin-bottom: 26px;
                                 ">
                                     Use the one-time login code below to access the
-                                    <strong>Travel Management System</strong>.
+                                    <strong>${process.env.PROJECT_NAME}</strong>.
                                     This system does not use permanent passwords.
                                 </p>
 
