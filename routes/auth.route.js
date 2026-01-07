@@ -3,8 +3,13 @@ const AuthController = require('../controllers/auth.controller');
 
 const router = express.Router();
 
-router.post('/create-auth', AuthController.createAuth)
 
-router.post('/verify-otp', AuthController.verifyOTP)
+router.post('/create-auth', AuthController.createAuth);
+
+router.post('/verify-otp', AuthController.verifyOTP);
+
+router.post('/mfa/enroll', AuthController.enrollMFA);
+
+router.post('/mfa/verify', AuthController.verifyMFA);
 
 module.exports = router;

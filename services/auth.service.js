@@ -1,112 +1,104 @@
-const bcrypt = require("bcrypt")
+const bcrypt = require("bcrypt");
 const MAX_ATTEMPTS = 5;
 
 // models
-const User = require("../models/user.model")
-const Role = require("../models/role.model")
-const UserOTP = require("../models/userotp.model")
+const User = require("../models/user.model");
+const Role = require("../models/role.model");
+const UserOTP = require("../models/userotp.model");
 
 // dtos
 const {
     CreateAccountResDTO,
     CreateLoginResDTO,
     VerifyLoginResDTO
-} = require("../dtos/auth.dto")
+} = require("../dtos/auth.dto");
 
-// genrate otp util
-const { genarateOTP } = require("../utils/others/genarateOTP")
+// utils
+const { genarateOTP } = require("../utils/others/genarateOTP");
+const generateToken = require("../utils/token/generateToken");
+const verifyToken = require("../utils/token/verifyToken");
+const { shouldResetAttempts } = require("../utils/logins/resetLoginAttempt");
+const logUserAction = require("../utils/others/logUserAction");
 
-// genarate token
-const generateToken = require("../utils/token/generateToken")
+// email templates
+const CreateAccountEmail = require("../templates/CreateAccountEmail");
+const notificationEmail = require("../templates/notificationEmail");
 
-// verify Token
-const verifyToken = require("../utils/token/verifyToken")
-
-// login apptempt reset 
-const { shouldResetAttempts } = require("../utils/logins/resetLoginAttempt")
-
-// use actions
-const logUserAction = require("../utils/others/logUserAction")
-
-// templates
-const CreateAccountEmail = require("../templates/CreateAccountEmail")
-const notificationEmail = require("../templates/notificationEmail")
-
-
+// security
+const { calculateRiskScore, riskDecision } = require("../utils/security/riskEngine");
+const { generateMFASecret, verifyMFAToken } = require("../utils/security/mfaService");
 
 class AuthService {
-    static async createAuth(email, req) {
-        const user = await User.findOne({ email: email })
-        const userotp = await UserOTP.findOne({ email: email })
 
-        if (userotp) {
-            throw new Error("OPT Already Sent, Check your email")
+    // =========================
+    // CREATE AUTH (SEND OTP)
+    // =========================
+    static async createAuth(email, req) {
+
+        const existingOTP = await UserOTP.findOne({ email });
+        if (existingOTP) {
+            throw new Error("OTP already sent. Check your email.");
         }
 
-        const otp = genarateOTP()
-        const hashotp = await bcrypt.hash(otp, 10)
+        let user = await User.findOne({ email });
 
-        await CreateAccountEmail(email, otp)
+        const otp = genarateOTP();
+        const hashotp = await bcrypt.hash(otp, 10);
+
+        await CreateAccountEmail(email, otp);
 
         await UserOTP.create({
             email,
             otp: hashotp
-        })
+        });
 
-        const otptoken = generateToken({ email }, '5min')
+        const otpToken = generateToken({ email }, "5min");
 
+        // NEW USER
         if (!user) {
             const role = await Role.findOne({ name: "user" });
             if (!role) throw new Error("Default role not found");
 
-            const newUser = await User.create({
+            user = await User.create({
                 email,
                 role: role._id,
                 isActive: true,
                 isEmailVerified: false
             });
 
-            if (req) {
-                await logUserAction(
-                    req,
-                    "REGISTER_OTP_SENT",
-                    `${email} registration OTP sent`,
-                    {
-                        ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
-                        userAgent: req.headers["user-agent"],
-                        timestamp: new Date()
-                    },
-                    newUser._id
-                );
-            }
-
-            return CreateAccountResDTO(otptoken)
-        }
-        if (req) {
             await logUserAction(
                 req,
-                "LOGIN_OTP_SENT",
-                `${email} login OTP sent`,
-                {
-                    ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
-                    userAgent: req.headers["user-agent"],
-                    timestamp: new Date()
-                },
+                "REGISTER_OTP_SENT",
+                "Registration OTP sent",
+                this._meta(req),
                 user._id
             );
+
+            return CreateAccountResDTO(otpToken);
         }
 
-        return CreateLoginResDTO(otptoken)
+        // EXISTING USER
+        await logUserAction(
+            req,
+            "LOGIN_OTP_SENT",
+            "Login OTP sent",
+            this._meta(req),
+            user._id
+        );
+
+        return CreateLoginResDTO(otpToken);
     }
 
+    // =========================
+    // VERIFY OTP + RISK CHECK
+    // =========================
     static async verifyOTP(token, otp, req) {
+
         const decoded = verifyToken(token);
         const email = decoded.email;
 
         const user = await User.findOne({ email });
-        if (!user) {
-            throw new Error("User not found");
-        }
+        if (!user) throw new Error("User not found");
 
         if (shouldResetAttempts(user)) {
             user.login_attempt = 0;
@@ -115,91 +107,161 @@ class AuthService {
         }
 
         if (user.login_attempt >= MAX_ATTEMPTS) {
-            throw new Error("Account temporarily locked. Try again after 15 minutes");
+            throw new Error("Account temporarily locked");
         }
 
-
-
-        const checkotp = await UserOTP.findOne({ email });
-        if (!checkotp || !checkotp.otp) {
-            user.login_attempt += 1;
-            user.lastLoginAttemptAt = new Date();
+        const userOTP = await UserOTP.findOne({ email });
+        if (!userOTP) {
+            user.login_attempt++;
             await user.save();
-            await logUserAction(
-                req,
-                "LOGIN_ATTEMPT_FAILED",
-                `${email} Login Attempt Failed, OTP not found or expired`,
-                {
-                    ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
-                    userAgent: req.headers["user-agent"],
-                    timestamp: new Date()
-                },
-                user._id
-            );
-
-            throw new Error("OTP expired or invalid. Please request a new one.");
+            throw new Error("OTP expired or invalid");
         }
 
-        const isOtpValid = await bcrypt.compare(otp, checkotp.otp);
-        if (!isOtpValid) {
-            user.login_attempt += 1;
-            user.lastLoginAttemptAt = new Date();
+        const isValid = await bcrypt.compare(otp, userOTP.otp);
+        if (!isValid) {
+            user.login_attempt++;
             await user.save();
-            await logUserAction(
-                req,
-                "LOGIN_ATTEMPT_FAILED",
-                `${email} Login Attempt Failed, Wrong OTP`,
-                {
-                    ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
-                    userAgent: req.headers["user-agent"],
-                    timestamp: new Date()
-                },
-                user._id
-            );
-
             throw new Error("Invalid OTP");
         }
 
-        const getuserrole = await Role.findById(user.role);
+        // =========================
+        // FRAUD / RISK ENGINE
+        // =========================
+        const riskScore = calculateRiskScore({
+            user,
+            req,
+            deviceId: req.headers["x-device-id"]
+        });
 
-        const authtoken = generateToken(
-            {
-                id: user._id,
-                email: user.email,
-                username: user.username,
-                role: getuserrole?.name,
-            },
-            "1d"
-        );
-
-        const metadata = {
-            ipAddress: req.headers["x-forwarded-for"] || req.socket.remoteAddress,
-            userAgent: req.headers["user-agent"],
-            timestamp: new Date().toLocaleString()
-        };
+        const decision = riskDecision(riskScore);
 
         await logUserAction(
             req,
-            "LOGIN_ATTEMPT_SUCCESS",
-            `${email} Login Attempt Success`,
-            metadata,
+            "RISK_EVALUATED",
+            `Risk=${riskScore}, Decision=${decision}`,
+            { riskScore, decision },
             user._id
         );
 
-        user.login_attempt = 0;
-        user.lastLoginAttemptAt = null;
+        // =========================
+        // LOW RISK → ISSUE TOKEN
+        // =========================
+        if (decision === "LOW" && user.mfa?.enabled) {
 
-        user.lastLogin = new Date();
+            const role = await Role.findById(user.role);
+
+            user.login_attempt = 0;
+            user.lastLogin = new Date();
+            user.lastLoginIp = this._ip(req);
+            user.trustedDevices = user.trustedDevices || [];
+            user.trustedDevices.push(req.headers["x-device-id"]);
+
+            await user.save();
+            await UserOTP.deleteOne({ email });
+
+            const jwt = generateToken({
+                id: user._id,
+                email: user.email,
+                role: role?.name
+            }, "1d");
+
+            await notificationEmail(email, "Login success");
+
+            return VerifyLoginResDTO(jwt);
+        }
+
+        // =========================
+        // REQUIRE MFA
+        // =========================
+        return {
+            mfaRequired: true,
+            mfaType: "AUTHENTICATOR_APP"
+        };
+    }
+
+    // =========================
+    // MFA ENROLL (QR CODE)
+    // =========================
+    static async enrollMFA(email, req) {
+
+        const user = await User.findOne({ email });
+        if (!user) throw new Error("User not found");
+
+        const { base32, qrCode } = await generateMFASecret(email);
+
+        user.mfa = {
+            enabled: false,
+            secret: base32
+        };
+
         await user.save();
 
-        const notification = "Login Success at " + user.lastLogin
-        await notificationEmail(email, notification)
+        await logUserAction(
+            req,
+            "MFA_ENROLLED",
+            "Authenticator app enrolled",
+            this._meta(req),
+            user._id
+        );
 
-        await UserOTP.deleteOne({ email });
+        return { qrCode };
+    }
 
-        return VerifyLoginResDTO(authtoken);
+    // =========================
+    // VERIFY MFA CODE
+    // =========================
+    static async verifyMFA(email, token, req) {
 
+        const user = await User.findOne({ email });
+        if (!user || !user.mfa?.secret) {
+            throw new Error("MFA not configured");
+        }
+
+        const valid = verifyMFAToken(token, user.mfa.secret);
+        if (!valid) throw new Error("Invalid MFA code");
+
+        const role = await Role.findById(user.role);
+
+        user.mfa.enabled = true;
+        user.login_attempt = 0;
+        user.lastLogin = new Date();
+        user.lastLoginIp = this._ip(req);
+        user.trustedDevices = user.trustedDevices || [];
+        user.trustedDevices.push(req.headers["x-device-id"]);
+
+        await user.save();
+
+        const jwt = generateToken({
+            id: user._id,
+            email: user.email,
+            role: role?.name
+        }, "1d");
+
+        await logUserAction(
+            req,
+            "MFA_SUCCESS",
+            "MFA verification successful",
+            this._meta(req),
+            user._id
+        );
+
+        return VerifyLoginResDTO(jwt);
+    }
+
+    // =========================
+    // HELPERS
+    // =========================
+    static _ip(req) {
+        return req.headers["x-forwarded-for"] || req.socket.remoteAddress;
+    }
+
+    static _meta(req) {
+        return {
+            ipAddress: this._ip(req),
+            userAgent: req.headers["user-agent"],
+            timestamp: new Date()
+        };
     }
 }
 
-module.exports = AuthService
+module.exports = AuthService;

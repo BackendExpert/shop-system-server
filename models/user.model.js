@@ -8,8 +8,14 @@ const UserSchema = new mongoose.Schema({
     isActive: { type: Boolean, default: true },
     login_attempt: { type: Number, default: 0 },
     lastLoginAttemptAt: { type: Date },
+    mfa: {
+        enabled: { type: Boolean, default: false },
+        secret: { type: String }
+    },
+    trustedDevices: [{ type: String }],
+    lastLoginIp: { type: String },
     lastLogin: Date,
-});
+}, {timestamps: true});
 
 const User = mongoose.model('User', UserSchema);
 

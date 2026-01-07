@@ -29,7 +29,7 @@ const AuthController = {
             const token = req.header("Authorization")?.replace("Bearer ", "");
             if (!token) return res.status(401).json({ message: "Access denied" });
 
-            const  { otp } = req.body
+            const { otp } = req.body
 
             const dto = VerifyOTPDTO(token, otp)
 
@@ -38,11 +38,31 @@ const AuthController = {
                 dto.otp,
                 req
             )
-            
+
             res.status(200).json(result)
 
         }
         catch (err) {
+            res.status(400).json(ErrorResDTO(err.message));
+        }
+    },
+
+    enrollMFA: async (req, res) => {
+        try {
+            const { email } = req.body;
+            const result = await AuthService.enrollMFA(email, req);
+            res.status(200).json(result);
+        } catch (err) {
+            return res.status(400).json(ErrorResDTO(err.message));
+        }
+    },
+
+    verifyMFA: async (req, res) => {
+        try {
+            const { email, token } = req.body;
+            const result = await AuthService.verifyMFA(email, token, req);
+            res.status(200).json(result);
+        } catch (err) {
             return res.status(400).json(ErrorResDTO(err.message));
         }
     }
